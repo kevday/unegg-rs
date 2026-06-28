@@ -1,0 +1,150 @@
+#!/bin/sh
+# unegg-crack-gui: GUI wrapper for password recovery
+# Tries zenity → yad → kdialog → terminal fallback
+
+ARCHIVE="$1"
+
+if [ -z "$ARCHIVE" ] || [ ! -f "$ARCHIVE" ]; then
+    echo "Usage: unegg-crack-gui <archive.egg>"
+    exit 1
+fi
+
+NAME=$(basename "$ARCHIVE")
+
+# Try zenity GUI
+if command -v zenity >/dev/null 2>&1; then
+    MODE=$(zenity --list \
+        --title="UnEgg - Password Recovery" \
+        --text="Archive: $NAME\n\nSelect recovery method:" \
+        --column="Method" --column="Description" \
+        --width=500 --height=350 \
+        "common" "Try 50+ common passwords (instant)" \
+        "wordlist" "Use a wordlist file (rockyou.txt etc)" \
+        "brute" "Brute force (slow, tries all combinations)" \
+        "hash" "Verify against a known PBKDF2 hash" \
+        2>/dev/null)
+
+    case "$MODE" in
+        common)
+            unegg-crack "$ARCHIVE" --common 2>&1 | zenity --text-info \
+                --title="UnEgg - Cracking..." \
+                --width=600 --height=400 \
+                --auto-scroll 2>/dev/null
+            ;;
+        wordlist)
+            WORDLIST=$(zenity --file-selection \
+                --title="Select wordlist file" \
+                --filename="/usr/share/wordlists/" 2>/dev/null)
+            if [ -n "$WORDLIST" ]; then
+                unegg-crack "$ARCHIVE" -w "$WORDLIST" --common 2>&1 | zenity --text-info \
+                    --title="UnEgg - Cracking..." \
+                    --width=600 --height=400 \
+                    --auto-scroll 2>/dev/null
+            fi
+            ;;
+        brute)
+            PARAMS=$(zenity --forms \
+                --title="UnEgg - Brute Force Settings" \
+                --text="Configure brute force attack:" \
+                --width=400 \
+                --add-entry="Min length (default: 1)" \
+                --add-entry="Max length (default: 6)" \
+                --add-entry="Charset (default: a-z,0-9)" \
+                --add-entry="Threads (default: 4)" \
+                2>/dev/null)
+
+            if [ -n "$PARAMS" ]; then
+                MIN=$(echo "$PARAMS" | cut -d'|' -f1)
+                MAX=$(echo "$PARAMS" | cut -d'|' -f2)
+                CHARSET=$(echo "$PARAMS" | cut -d'|' -f3)
+                THREADS=$(echo "$PARAMS" | cut -d'|' -f4)
+
+                ARGS=""
+                [ -n "$MIN" ] && ARGS="$ARGS -m $MIN"
+                [ -n "$MAX" ] && ARGS="$ARGS -M $MAX"
+                [ -n "$CHARSET" ] && ARGS="$ARGS -c $CHARSET"
+                [ -n "$THREADS" ] && ARGS="$ARGS -t $THREADS"
+
+                unegg-crack "$ARCHIVE" $ARGS 2>&1 | zenity --text-info \
+                    --title="UnEgg - Brute Forcing..." \
+                    --width=600 --height=400 \
+                    --auto-scroll 2>/dev/null
+            fi
+            ;;
+        hash)
+            HASH=$(zenity --entry \
+                --title="UnEgg - Hash Verification" \
+                --text="Enter PBKDF2 hash (salt:hash format):" \
+                --width=500 2>/dev/null)
+            if [ -n "$HASH" ]; then
+                unegg-crack "$ARCHIVE" --hash "$HASH" 2>&1 | zenity --text-info \
+                    --title="UnEgg - Hash Check" \
+                    --width=600 --height=400 2>/dev/null
+            fi
+            ;;
+    esac
+    exit 0
+fi
+
+# Try yad GUI
+if command -v yad >/dev/null 2>&1; then
+    yad --title="UnEgg Password Recovery" \
+        --text="Archive: $NAME\nSelect recovery method:" \
+        --button="Common passwords:0" \
+        --button="Wordlist:1" \
+        --button="Brute force:2" \
+        --button="Hash check:3" \
+        --button="Cancel:4" \
+        --width=400 2>/dev/null
+    RETVAL=$?
+
+    case $RETVAL in
+        0) unegg-crack "$ARCHIVE" --common ;;
+        1)
+            WORDLIST=$(yad --file-selection --title="Select wordlist" 2>/dev/null)
+            [ -n "$WORDLIST" ] && unegg-crack "$ARCHIVE" -w "$WORDLIST" --common
+            ;;
+        2) unegg-crack "$ARCHIVE" -m 1 -M 6 --common ;;
+        3)
+            HASH=$(yad --entry --text="Enter salt:hash" 2>/dev/null)
+            [ -n "$HASH" ] && unegg-crack "$ARCHIVE" --hash "$HASH"
+            ;;
+    esac
+    exit 0
+fi
+
+# Terminal fallback
+echo "╔══════════════════════════════════════════════╗"
+echo "║       UnEgg Password Recovery Tool           ║"
+echo "╚══════════════════════════════════════════════╝"
+echo ""
+echo "Archive: $NAME"
+echo ""
+echo "Select method:"
+echo "  1) Try common passwords"
+echo "  2) Use wordlist"
+echo "  3) Brute force"
+echo "  4) Verify hash"
+echo ""
+printf "Choice [1-4]: "
+read -r CHOICE
+
+case "$CHOICE" in
+    1) unegg-crack "$ARCHIVE" --common ;;
+    2)
+        printf "Wordlist path: "
+        read -r WORDLIST
+        unegg-crack "$ARCHIVE" -w "$WORDLIST" --common
+        ;;
+    3)
+        printf "Min length [1]: "; read -r MIN; MIN=${MIN:-1}
+        printf "Max length [6]: "; read -r MAX; MAX=${MAX:-6}
+        printf "Charset [a-z0-9]: "; read -r CHARSET; CHARSET=${CHARSET:-abcdefghijklmnopqrstuvwxyz0123456789}
+        unegg-crack "$ARCHIVE" -m "$MIN" -M "$MAX" -c "$CHARSET" --common
+        ;;
+    4)
+        printf "Hash (salt:hash): "
+        read -r HASH
+        unegg-crack "$ARCHIVE" --hash "$HASH"
+        ;;
+esac

@@ -1,0 +1,99 @@
+#!/bin/sh
+# unegg-extract: wrapper for GNOME file manager integration
+# Usage: unegg-extract <archive.egg> [destination] [password]
+#
+# If called from Nautilus extension, $3 may contain the password.
+# If called from .desktop (double-click), password is asked via terminal.
+
+ARCHIVE="$1"
+DEST="$2"
+PASSWORD="$3"
+
+if [ -z "$ARCHIVE" ] || [ ! -f "$ARCHIVE" ]; then
+    echo "Usage: unegg-extract <archive.egg> [destination] [password]"
+    exit 1
+fi
+
+# If no destination, extract to same dir in a subfolder
+if [ -z "$DEST" ]; then
+    PARENT="$(dirname "$ARCHIVE")"
+    BASENAME="$(basename "$ARCHIVE")"
+    NAME="${BASENAME%.*}"
+    DEST="$PARENT/$NAME"
+fi
+
+echo "╔══════════════════════════════════════════╗"
+echo "║         UnEgg Archive Extractor          ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+echo "  Archive: $(basename "$ARCHIVE")"
+echo "  Destination: $DEST"
+echo ""
+
+mkdir -p "$DEST"
+
+# Check if archive is encrypted (try listing first, look for encrypted files)
+NEEDS_PASSWORD=0
+LIST_OUTPUT=$(unegg -l "$ARCHIVE" 2>&1)
+
+if echo "$LIST_OUTPUT" | grep -qi "encrypted.*yes"; then
+    NEEDS_PASSWORD=1
+fi
+
+# If encrypted and no password provided yet, ask
+if [ "$NEEDS_PASSWORD" = "1" ] && [ -z "$PASSWORD" ]; then
+    echo "🔒 This archive is encrypted."
+    echo ""
+    printf "Enter password (or press Enter to skip): "
+    read -r PASSWORD
+    echo ""
+fi
+
+# Build unegg command
+UNEGG_ARGS="-x"
+
+# Run extraction
+cd "$DEST"
+if [ -n "$PASSWORD" ]; then
+    # unegg C version reads password interactively when needed
+    # We pipe the password if available
+    echo "$PASSWORD" | unegg $UNEGG_ARGS "$ARCHIVE" . 2>&1
+else
+    unegg $UNEGG_ARGS "$ARCHIVE" . 2>&1
+fi
+
+EXITCODE=$?
+
+echo ""
+if [ $EXITCODE -eq 0 ]; then
+    FILE_COUNT=$(find "$DEST" -type f | wc -l)
+    echo "╔══════════════════════════════════════════╗"
+    echo "║  ✓ Extraction complete!                  ║"
+    echo "╚══════════════════════════════════════════╝"
+    echo ""
+    echo "  Files extracted: $FILE_COUNT"
+    echo "  Location: $DEST"
+    echo ""
+
+    # Open folder in file manager if available
+    if command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$DEST" 2>/dev/null &
+    elif command -v nautilus >/dev/null 2>&1; then
+        nautilus "$DEST" 2>/dev/null &
+    elif command -v thunar >/dev/null 2>&1; then
+        thunar "$DEST" 2>/dev/null &
+    fi
+else
+    echo "╔══════════════════════════════════════════╗"
+    echo "║  ✗ Extraction failed (error $EXITCODE)          ║"
+    echo "╚══════════════════════════════════════════╝"
+
+    if [ $EXITCODE -eq 10 ]; then
+        echo ""
+        echo "  ⚠ Wrong password or decryption failed."
+    fi
+fi
+
+echo ""
+echo "Press Enter to close..."
+read -r _
