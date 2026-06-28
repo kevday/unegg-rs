@@ -4,7 +4,7 @@ EGG/ALZ archive decompressor for Alpine Linux with GNOME integration.
 
 ## Quick Start
 
-### Install APK on Alpine 3.24
+### Install APK on Alpine 3.23
 ```sh
 apk add --allow-untrusted bin/unegg-0.5.0-r5-x86_64.apk
 ```
@@ -29,7 +29,7 @@ cd apk-build
 
 ## Project Structure
 ```
-unegg-all/
+unegg-rs/
 ├── README.md                    # This file
 ├── BUILD.md                     # Detailed build instructions
 ├── Makefile.c                   # C Makefile (musl cross-compile)
@@ -51,13 +51,6 @@ unegg-all/
 │       ├── unegg-extract        # Extract wrapper (with password)
 │       ├── unegg-crack          # Password recovery engine
 │       └── unegg-crack-gui      # GUI for password recovery
-│
-├── apk-build/                   # Alpine package build
-│   └── APKBUILD                 # Alpine package recipe
-│
-├── patches/                     # Source patches
-│   ├── 0001-add-unistd-for-getcwd.patch
-│   └── 0002-add-7zip-st-flag.patch
 │
 └── bin/                         # Pre-built binaries
     ├── unegg-musl-static        # C version (musl, static, 2MB)
